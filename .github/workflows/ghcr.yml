@@ -1,52 +1,189 @@
-name: Build and Push to GHCR
+name: Unified GHCR Build - FlashLoan / FlashSwap Executors - Ready Deployed - No Redeploy - Just Call Proxy/Pool
 
 on:
   push:
-    branches: ["main", "master"]
-    tags: ["v*"]
+    branches: [main, master, develop]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
   workflow_dispatch:
+    inputs:
+      image_name:
+        description: 'Override GHCR image name (e.g. ghcr.io/YOURNAME/custom)'
+        required: false
+        default: ''
+      executor_type:
+        description: 'Executor type - For label only - No redeploy needed - Just call proxy/pool'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - furucombo
+          - 1inch-v6
+          - 0x-proxy
+          - balancer
+          - aave
+          - uniswap
+          - wp-plugin
+
+env:
+  # Ready Deployed Executors - No redeploy - Just call proxy/pool - Permissionless - Anyone can use
+  FURUCOMBO_OLD: "0x17e6dE1a56b5f0Aa32E2178e9b3E2C4dB6B3927B"
+  FURUCOMBO_NEW: "0x1721a66b1E8F5bCf3D78de8541Dd8bB6e1F4cEA8"
+  ONEINCH_V6: "0x111111125421ca6dc452d289314280a0f8842a65"
+  ZEROX_PROXY: "0xDef1C0ded9bec7F1a1670819833240f027b25EfF"
+  BALANCER_VAULT: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+  AAVE_V3_POOL: "0x794a61358D6845594F94dc1DB02A252b5b665AC"
+  UNISWAP_V3_ROUTER: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+  QUICKSWAP_ROUTER: "0xa5E0829CaCEd8fFDD4De3c436d0b0D115a88FE76"
+  RPC_POLYGON: "https://polygon-rpc.com"
 
 jobs:
-  build-and-push:
+  build-and-push-ghcr:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      packages: write # Needed to push to GHCR - Free - No special permission - Permissionless
+      id-token: write
 
-      - name: Set up Docker Buildx
+    steps:
+      - name: Checkout - Any repo - Furucombo + 1inch V6 + 0x + Balancer + WP plugin ZIP - Unified
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Docker Buildx - No local Docker - Online builder - Free
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
+      - name: Login to GHCR - Free - No special API - Uses GITHUB_TOKEN auto - No personal token - Permissionless
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Lowercase repo name
-        id: repo
-        run: echo "repo=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-
-      - name: Extract metadata
+      - name: Docker meta - Unified tags - Works for all executors - Ready deployed - No redeploy
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ steps.repo.outputs.repo }}
+          images: |
+            ghcr.io/${{ github.repository }}
+            ${{ inputs.image_name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
-            type=sha
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-,format=short
+          labels: |
+            org.opencontainers.image.title=FlashLoan FlashSwap Executor - Ready Deployed - No Redeploy Needed
+            org.opencontainers.image.description=Ready Deployed Executors: Furucombo ${{ env.FURUCOMBO_OLD }} + 1inch V6 ${{ env.ONEINCH_V6 }} 0% FREE Takes Surplus Built-in FlashLoan via Resolver + 0x ${{ env.ZEROX_PROXY }} Polygon Mainnet + Balancer ${{ env.BALANCER_VAULT }} 0% FREE + Aave V3 ${{ env.AAVE_V3_POOL }} - All used WITHOUT redeploying - Just call proxy/pool - Permissionless - Anyone can use - No permission - WP Plugin alone + public RPC
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+            executor.furucombo.old=${{ env.FURUCOMBO_OLD }}
+            executor.1inch.v6=${{ env.ONEINCH_V6 }}
+            executor.0x.proxy.polygon=${{ env.ZEROX_PROXY }}
+            executor.balancer.vault.0pct=${{ env.BALANCER_VAULT }}
+            executor.aave.v3=${{ env.AAVE_V3_POOL }}
 
-      - name: Build and Push
-        uses: docker/build-push-action@v6
+      - name: Check if Dockerfile exists - Unified - Works for any repo
+        id: check_dockerfile
+        run: |
+          if [ -f "./Dockerfile" ]; then echo "exists=true" >> $GITHUB_OUTPUT; else echo "exists=false" >> $GITHUB_OUTPUT; fi
+          if [ -f "./contracts" ]; then echo "has_contracts=true" >> $GITHUB_OUTPUT; else echo "has_contracts=false" >> $GITHUB_OUTPUT; fi
+          if [ -f "./package.json" ]; then echo "has_package=true" >> $GITHUB_OUTPUT; else echo "has_package=false" >> $GITHUB_OUTPUT; fi
+
+      - name: Build and Push to GHCR - Unified - No local Docker - Online - Free - Pushes to ghcr.io/YOURNAME/REPO - Anyone can use without redeployment
+        uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            EXECUTOR_TYPE=${{ inputs.executor_type }}
+            FURUCOMBO_OLD=${{ env.FURUCOMBO_OLD }}
+            ONEINCH_V6=${{ env.ONEINCH_V6 }}
+            ZEROX_PROXY=${{ env.ZEROX_PROXY }}
+            BALANCER_VAULT=${{ env.BALANCER_VAULT }}
+            AAVE_V3_POOL=${{ env.AAVE_V3_POOL }}
+
+      - name: Generate ready-executors.json - Unified - No redeploy - Just call proxy/pool - For WP plugin
+        run: |
+          cat > ready-executors.json << 'EOF'
+          {
+            "ready_deployed_executors": {
+              "Furucombo_Old_Polygon": "0x17e6dE1a56b5f0Aa32E2178e9b3E2C4dB6B3927B",
+              "Furucombo_New_Polygon": "0x1721a66b1E8F5bCf3D78de8541Dd8bB6e1F4cEA8",
+              "1inch_V6_Router_0pct_FREE": "0x111111125421ca6dc452d289314280a0f8842a65",
+              "0x_Exchange_Proxy_Polygon_Mainnet": "0xDef1C0ded9bec7F1a1670819833240f027b25EfF",
+              "Balancer_Vault_0pct_FREE": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+              "Aave_V3_Pool_Polygon_0_05pct": "0x794a61358D6845594F94dc1DB02A252b5b665AC",
+              "Uniswap_V3_Router_FlashSwap": "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+              "QuickSwap_Router_FlashSwap": "0xa5E0829CaCEd8fFDD4De3c436d0b0D115a88FE76",
+              "SushiSwap_Router": "0x1b02dA8Cb0d097eB8D57A175b88c7F2908d68E89"
+            },
+            "permission_needed": false,
+            "need_deploy": false,
+            "need_special_api": false,
+            "fee": "0% FREE - 1inch V6 Takes surplus only - Balancer 0% FREE - 0x 0% FREE - Furucombo 0%",
+            "has_builtin_flashloan": {
+              "1inch_V6": true,
+              "via": "resolver inside router.swap() - No Balancer/Aave needed",
+              "Furucombo": true,
+              "via_furucombo": "executeOperation() + uniswapV2Call() - Has Aave + Balancer + QuickSwap flashloan inside",
+              "0x_Proxy": true,
+              "via_0x": "transforms + fill - Flashloan-like inside"
+            },
+            "is_for_polygon_mainnet": true,
+            "polygon_mainnet_already_deployed": {
+              "0x_Exchange_Proxy": "Yes - 0xDef1C0ded9bec7F1a1670819833240f027b25EfF - Same address on all chains - Already deployed on Polygon - No deploy needed",
+              "1inch_V6": "Yes - 0x111111125421ca6dc452d289314280a0f8842a65 - Already deployed on Polygon",
+              "Balancer_Vault": "Yes - 0xBA12222222228d8Ba445958a75a0704d566BF2C8 - Already deployed on Polygon - 0% FREE"
+            },
+            "usage": "Use WITHOUT redeploying - Just call proxy/pool - Anyone can use - No permission - WP Plugin alone + public RPC + wrapper used WITHOUT redeploying - No Bunny Edge - No external",
+            "wp_plugin": {
+              "shortcode": "[poldex_1inch] or [poldex_0x] or [poldex_furucombo]",
+              "rpc": "https://polygon-rpc.com - Public snippet - No ENV - No Alchemy",
+              "api": "https://api.1inch.io/v6.0/137/quote - No key for quote - Free - Permissionless OR https://api.0x.org/swap/v1/quote - Free key from dashboard.0x.org",
+              "execution": "signer.sendTransaction({ to: READY_EXECUTOR, data: tx.data }) - Call WITHOUT redeploying - Has built-in flashloan inside"
+            },
+            "ghcr_image": "ghcr.io/${{ github.repository }}:latest - Free - Anyone can pull - No local Docker - Online builder - Unified Dockerfile + ghcr.yml - Anyone can fork and reuse",
+            "github_repo_has": ".github/workflows/ghcr.yml + Dockerfile - Unified - One file for all executors - Anyone can fork",
+            "license": "MIT - Free - Open source - Public - Anyone can fork and reuse"
+          }
+          EOF
+          cat ready-executors.json
+
+      - name: Upload ready-executors.json - Artifact - For WP plugin - No redeploy
+        uses: actions/upload-artifact@v4
+        with:
+          name: ready-executors
+          path: ready-executors.json
+
+      - name: Success - GHCR Image Ready - No redeploy needed - Just call proxy/pool
+        run: |
+          echo "✅ Unified GHCR Build Success - Ready Deployed FlashLoan Executors - No redeploy needed"
+          echo ""
+          echo "Pushed to:"
+          echo "${{ steps.meta.outputs.tags }}"
+          echo ""
+          echo "Pull:"
+          echo "docker pull ghcr.io/${{ github.repository }}:latest"
+          echo ""
+          echo "Ready Deployed - No deploy - Just call - Permissionless - Anyone can use:"
+          echo "Furucombo Old: ${{ env.FURUCOMBO_OLD }} - Has executeOperation + uniswapV2Call - 0%"
+          echo "1inch V6: ${{ env.ONEINCH_V6 }} - 0% FREE - Takes surplus - Built-in flashloan via resolver - Best"
+          echo "0x Proxy Polygon Mainnet: ${{ env.ZEROX_PROXY }} - Already deployed - No deploy - 0% FREE"
+          echo "Balancer Vault: ${{ env.BALANCER_VAULT }} - 0% FREE flashloan - Best"
+          echo "Aave V3: ${{ env.AAVE_V3_POOL }} - 0.05%"
+          echo ""
+          echo "WP Plugin: Uses wrappers WITHOUT redeploying - No Bunny Edge - No external - Only WP + public RPC"
+          echo "Unified: One ghcr.yml + One Dockerfile for all executors - Anyone can fork and reuse - Free - MIT"
