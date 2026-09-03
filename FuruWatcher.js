@@ -1,7 +1,7 @@
 const Web3 = require('web3');
 
 // initialise nodeJS bot
-const infuraID = 'YOUR INFURA PROJECT ID';
+const infuraID = 'https://polygon-mainnet.infura.io/v3/487947bf6c294c668c2fcc3d0efa488f';
 web3 = new Web3(new Web3.providers.HttpProvider('https://mainnet.infura.io/v3/' + infuraID));
 const furucomboProxyContract = '0x57805e5a227937BAc2B0FdaCaA30413ddac6B8E1'.toLowerCase();
 
